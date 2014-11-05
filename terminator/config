@@ -1,0 +1,25 @@
+[global_config]
+  always_split_with_profile = True
+[keybindings]
+[profiles]
+  [[default]]
+    palette = "#000000:#cc0000:#4e9a06:#c4a000:#3465a4:#75507b:#06989a:#d3d7cf:#555753:#ef2929:#8ae234:#fce94f:#729fcf:#ad7fa8:#34e2e2:#eeeeec"
+    background_type = transparent
+    background_image = None
+  [[soft-tango]]
+    palette = "#1b1b1b:#ab4642:#a0b56c:#f7ca87:#7cafc2:#ba8baf:#86c1b8:#cfcfcf:#dc9656:#e85f59:#cde88b:#ffe5bd:#91cde3:#e1a8d3:#9ce1d6:#f7f7f7"
+    background_darkness = 0.83
+    background_type = transparent
+    background_image = None
+    show_titlebar = False
+    font = Terminus 10
+[layouts]
+  [[default]]
+    [[[child1]]]
+      type = Terminal
+      parent = window0
+      profile = soft-tango
+    [[[window0]]]
+      type = Window
+      parent = ""
+[plugins]
