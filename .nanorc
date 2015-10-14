@@ -1,0 +1,12 @@
+include /usr/share/nano/sh.nanorc
+include /usr/share/nano/python.nanorc
+include /usr/share/nano/pkgbuild.nanorc
+include /usr/share/nano/sh.nanorc 
+
+set suspend
+set smooth
+set titlecolor brightwhite,blue
+set statuscolor brightwhite,green
+set keycolor green
+set functioncolor yellow
+
