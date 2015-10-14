@@ -25,7 +25,7 @@ alias pacrem='sudo pacman -Rns'		# Remove the specified package(s), its configur
 alias ls='ls --color=auto' 
 
 #dropbear
-alias ssh=dbclient
+#alias ssh=dbclient
 
 #colorized man pages
 man() {
@@ -44,4 +44,3 @@ bind '"\e[B": history-search-forward'
 
 #rubypath
 PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
-
