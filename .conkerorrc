@@ -1,0 +1,345 @@
+/* ------------------------------------------------------------------------- */
+/* Conkeror config file */
+/* ------------------------------------------------------------------------- */
+
+//Homepage
+homepage = "about:";
+
+//// Tab-bar
+require("new-tabs.js");
+tab_bar_show_icon = true;
+tab_bar_show_index = true;
+
+//New buffers instead of new windows.
+url_remoting_fn = load_url_in_new_buffer;
+
+// add favicons
+require("favicon");
+add_hook("mode_line_hook", mode_line_adder(buffer_icon_widget), true);
+
+//// Widgets
+// Navigation Buttons
+load_paths.unshift("chrome://conkeror-contrib/content/");
+require("mode-line-buttons.js");
+mode_line_add_buttons(standard_mode_line_buttons, true);
+read_buffer_show_icons = true;
+
+// Buffer Count
+add_hook("mode_line_hook", mode_line_adder(buffer_count_widget), true);
+
+// Auto completion in the minibuffer
+minibuffer_auto_complete_default = true;
+url_completion_use_bookmarks, true;
+url_completion_use_history = true;
+
+// Block gif animations
+//session_pref("image.animation_mode", "none");
+ 
+// Enable history navigation
+define_browser_object_class(
+    "history-url", null, 
+    function (I, prompt) {
+        check_buffer (I.buffer, content_buffer);
+        var result = yield I.buffer.window.minibuffer.read_url(
+            $prompt = prompt,  $use_webjumps = false, $use_history = true, $use_bookmarks = false);
+        yield co_return (result);
+    });
+
+interactive("find-url-from-history",
+            "Find a page from history in the current buffer",
+            "find-url",
+            $browser_object = browser_object_history_url);
+
+interactive("find-url-from-history-new-buffer",
+            "Find a page from history in the current buffer",
+            "find-url-new-buffer",
+            $browser_object = browser_object_history_url);
+
+define_key(content_buffer_normal_keymap, "h", "find-url-from-history-new-buffer");
+define_key(content_buffer_normal_keymap, "H", "find-url-from-history");
+
+// Clear history
+
+function history_clear () {
+    var history = Cc["@mozilla.org/browser/nav-history-service;1"]
+        .getService(Ci.nsIBrowserHistory);
+    history.removeAllPages();
+};
+
+interactive("history-clear",
+            "Clear the history.",
+            history_clear);
+
+// display the url before going to it in hints mode
+hints_display_url_panel = true;
+
+//Bind Number Keys to Switch to Buffers 1-10
+function define_switch_buffer_key (key, buf_num) {
+    define_key(default_global_keymap, key,
+               function (I) {
+                   switch_to_buffer(I.window,
+                                    
+I.window.buffers.get_buffer(buf_num));
+               });
+}
+for (let i = 0; i < 10; ++i) {
+    define_switch_buffer_key(String((i+1)%10), i);
+}
+
+//Remember the last save directory for downloads
+function update_save_path (info) {
+    cwd = info.target_file.parent;
+}
+add_hook("download_added_hook", update_save_path);
+
+// History clearing preferences
+session_pref('browser.history_expire_days', 2);
+
+// Sessions
+require("session.js");
+
+// middle click opens in new buffer
+require("clicks-in-new-buffer.js");
+clicks_in_new_buffer_target = OPEN_NEW_BUFFER_BACKGROUND
+
+// download management
+download_buffer_automatic_open_target = OPEN_NEW_BUFFER_BACKGROUND;
+
+// Ask before closing the window
+add_hook("window_before_close_hook",
+         function () {
+             var w = get_recent_conkeror_window();
+             var result = (w == null) ||
+                 "y" == (yield w.minibuffer.read_single_character_option(
+                     $prompt = "Quit Conkeror? (y/n)",
+                     $options = ["y", "n"]));
+             yield co_return(result);
+         });
+
+// Disable closing of lasts buffer
+can_kill_last_buffer = false;
+
+// Reload this file on the fly
+interactive("rc-reload",
+            "Reload the Conkerorrc.",
+            function(I) { load_rc_file("/home/b/.conkerorrc"); });
+
+// My Webjumps
+define_webjump("imdb", "http://www.imdb.com/find?q=%s");
+define_webjump("youtube", "http://www.youtube.com/results?search_query=%s&search=Search");
+define_webjump("archwiki", "https://wiki.archlinux.org/index.php?search=%s"); // arch wiki
+define_webjump("subscene", "http://subscene.com/subtitles/title?q=%s");
+define_webjump("addic7ed", "http://www.addic7ed.com/search.php?search=%s&Submit=Search");
+
+// Tooltips
+function overlink_predicate (node) {
+    if (node instanceof Ci.nsIDOMHTMLEmbedElement ||
+        node instanceof Ci.nsIDOMHTMLObjectElement)
+        return node;
+    while (node && !(node instanceof Ci.nsIDOMHTMLAnchorElement)
+           && !(node.hasAttribute && node.hasAttribute("title"))) {
+        node = node.parentNode;
+    }
+    return node;
+}
+
+function overlink_update_status (buffer, node) {
+    var m = buffer.window.minibuffer;
+    if (node) {
+        if (node instanceof Ci.nsIDOMHTMLEmbedElement ||
+            node instanceof Ci.nsIDOMHTMLObjectElement)
+        {
+            m.show("(object/embed)");
+        } else if (node.hasAttribute && node.hasAttribute("title")) {
+            m.show(node.getAttribute("title"));
+        } else if (node instanceof Ci.nsIDOMHTMLAnchorElement) {
+            m.show(node.getAttribute("href"));
+        } else {
+            m.clear();
+        }
+    } else {
+        m.clear();
+    }
+}
+
+// Revive buffer
+define_key(default_global_keymap, "C-T", "restore-killed-buffer-url");
+
+var kill_buffer_original = kill_buffer_original || kill_buffer;
+
+var killed_buffers = [];
+
+kill_buffer = function (buffer, force) {
+    if (buffer.display_uri_string) {
+        killed_buffers.push({url: buffer.display_uri_string,
+                             title: buffer.title,
+                             history: buffer.web_navigation.sessionHistory});
+    }
+
+    kill_buffer_original(buffer,force);
+};
+
+interactive("restore-killed-buffer-url", "Loads url from a previously killed buffer",
+            function restore_killed_buffer_url (I) {
+                if (killed_buffers.length !== 0) {
+                    var killed_buffer = yield I.minibuffer.read(
+                        $prompt = "Restore killed buffer url:",
+                        $completer = new all_word_completer($completions = killed_buffers,
+                                                            $get_string = function (x) x.url,
+                                                            $get_description = function (x) x.title),
+                        $default_completion = killed_buffers[killed_buffers.length - 1],
+                        $auto_complete = "url",
+                        $auto_complete_initial = true,
+                        $auto_complete_delay = 0,
+                        $require_match = true
+                    );
+                    
+                    load_url_in_new_buffer(killed_buffer.url);
+
+                    var buf = I.window.buffers.current;
+                    buf.web_navigation.sessionHistory = killed_buffer.history;
+                    var original_index = buf.web_navigation.sessionHistory.index;
+                    buf.web_navigation.gotoIndex(original_index);
+
+                } else {
+                    I.window.minibuffer.message("No killed buffer urls");
+                }
+            });
+
+// Follow Links in a New Buffer with a One-Key Binding
+define_key(content_buffer_normal_keymap, "d", "follow-new-buffer");
+
+//Switch to previously open buffer
+interactive("switch-to-other-buffer",
+            "Switch to the previously open buffer",
+            function (I) {
+                var blist = I.window.buffers.buffer_list
+                if (blist.length > 1)
+                    switch_to_buffer(I.window, blist[1]);
+            });
+
+
+
+
+// Order buffers by last access time
+interactive("switch-to-recent-buffer",
+    "Prompt for a buffer and switch to it, displaying the list in last-visited order.",
+    function (I) {
+        switch_to_buffer(
+            I.window,
+            (yield I.minibuffer.read_buffer(
+                $prompt = "Switch to buffer:",
+                $buffers = I.window.buffers.buffer_history,
+                $default = (I.window.buffers.count > 1 ?
+                            I.window.buffers.buffer_history[1] :
+                            I.buffer))));
+    });
+
+define_key(default_global_keymap, "C-x b", "switch-to-recent-buffer");
+
+
+/*
+  Implements new login-manager.
+  See:
+  - http://librelist.com/browser//conkeror/2013/11/28/login-manager-xulrunner-24-0/
+  - https://blog.mozilla.org/dolske/2013/08/21/a-change-in-password-manager/
+
+  (C) Copyright 2014 thorkill
+  BSD License
+*/
+
+let Cu = Components.utils;
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this,
+                                  "LoginManagerContent",
+                                  "resource://gre/modules/LoginManagerContent.jsm");
+XPCOMUtils.defineLazyModuleGetter(this,
+                                  "LoginManagerParent",
+                                  "resource://gre/modules/LoginManagerParent.jsm");
+
+define_buffer_local_hook("content_buffer_dom_form_has_password_hook");
+define_buffer_local_hook("content_buffer_dom_auto_complete_hook");
+
+// passwords
+session_pref("signon.rememberSignons", true);
+session_pref("signon.expireMasterPassword", false);
+session_pref("signon.SignonFileName", "signons.txt");
+session_pref("signon.useDOMFormHasPassword", true);
+
+Cc["@mozilla.org/login-manager;1"].getService(Ci.nsILoginManager);
+
+/* debugging prefs */
+//session_pref("browser.formfill.debug", false);
+//session_pref("browser.dom.window.dump.enabled", true);
+//session_pref("javascript.options.showInConsole", true);
+//session_pref("javascript.options.strict", true);
+//session_pref("nglayout.debug.disable_xul_cache", true);
+//session_pref("nglayout.debug.disable_xul_fastload", true);
+
+LoginManagerParent.init();
+
+add_hook("create_buffer_hook", function (buffer) {
+
+        buffer.browser.addEventListener("DOMFormHasPassword", function(event) {
+            content_buffer_dom_form_has_password_hook.run(buffer, event);
+        }, true /* captrue */);
+
+        buffer.browser.addEventListener("DOMAutoComplete", function(event) {
+            content_buffer_dom_auto_complete_hook.run(buffer, event);
+        }, true /* captrue */);
+
+        buffer.browser.addEventListener("blur", function(event) {
+            content_buffer_dom_auto_complete_hook.run(buffer, event);
+        }, true /* captrue */);
+
+        buffer.browser.addEventListener("change", function(event) {
+            content_buffer_dom_auto_complete_hook.run(buffer, event);
+        }, true /* captrue */);
+
+});
+
+add_hook("content_buffer_dom_form_has_password_hook", function(buffer, event) {
+    // Sometimes onFormPassword is undefined
+    if (LoginManagerContent.onFormPassword) {
+        LoginManagerContent.onFormPassword(event);
+    }
+});
+
+add_hook("content_buffer_dom_auto_complete_hook", function(buffer, event) {
+        LoginManagerContent.onUsernameInput(event);
+});
+
+//cookies
+require("cookie.js"); // hopefully this would go in modules/cookie.js so this would not be needed
+
+function for_each_host_cookie(host, fn) {
+    var cookies = cookie_manager.getCookiesFromHost(host);
+    while (cookies.hasMoreElements()) {
+        var cookie = cookies.getNext().QueryInterface(Components.interfaces.nsICookie2);
+        fn(cookie);
+    }
+}
+
+function clear_host_cookies(host) {
+    for_each_host_cookie(host,
+                         function (cookie) {
+                             cookie_manager.remove(cookie.host, cookie.name, cookie.path, false);
+                         });
+}
+
+interactive("clear-site-cookies", "Delete all cookies for the current site",
+            function (I) {
+                var host = I.buffer.current_uri.host;
+                clear_host_cookies(host);
+                I.minibuffer.message("Cookies cleared for " + host);
+            });
+
+//History and bookmark manager
+load_paths.unshift("file:///home/b/.conkeror.mozdev.org/conkeror-histmark");
+require("histmark-manager.js");
+
+
+
+
+
+
